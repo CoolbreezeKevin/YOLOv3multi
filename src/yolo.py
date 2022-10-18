@@ -73,6 +73,7 @@ class UnetUppHead(nn.Cell):
         self.bottleneck=DoubleConv(features[-1],features[-1]*2)
         self.final_conv=nn.Conv2d(features[0],out_channels,kernel_size=1)
         self.concat = ops.Concat(axis=1)
+        self.sigmoid = ops.Sigmoid()
         self.features = features
     def construct(self, features):
         skip_connections=features
@@ -94,8 +95,8 @@ class UnetUppHead(nn.Cell):
 
             concat_skip=self.concat((skip_connection,x))
             x=self.ups[idx+1](concat_skip)
-
-        return self.final_conv(x)
+        x = self.final_conv(x)
+        return self.sigmoid(x)
 
 class YoloBlock(nn.Cell):
     """
@@ -450,7 +451,14 @@ class YOLOV3DarkNet53(nn.Cell):
         # big is the final output which has smallest feature map
         return output_big, output_me, output_small, seg_road
 
-
+class UnetLossBlock(nn.Cell):
+    """
+    Loss block cell of YOLOV3 network.
+    """
+    def __init__(self, config=None):
+        super(UnetLossBlock, self).__init__()
+    def construct(self, pred, mask):
+        return ops.cross_entropy(pred, mask)
 
 
 class YoloWithLossCell(nn.Cell):
@@ -463,12 +471,14 @@ class YoloWithLossCell(nn.Cell):
         self.loss_big = YoloLossBlock('l', self.config)
         self.loss_me = YoloLossBlock('m', self.config)
         self.loss_small = YoloLossBlock('s', self.config)
+        self.unet_loss = UnetLossBlock()
 
-    def construct(self, x, y_true_0, y_true_1, y_true_2, gt_0, gt_1, gt_2):
+    def construct(self, x, y_true_0, y_true_1, y_true_2, gt_0, gt_1, gt_2, mask):
         input_shape = ops.shape(x)[2:4]
         input_shape = ops.cast(self.tenser_to_array(input_shape), ms.float32)
         yolo_out = self.yolo_network(x)
         loss_l = self.loss_big(*yolo_out[0], y_true_0, gt_0, input_shape)
         loss_m = self.loss_me(*yolo_out[1], y_true_1, gt_1, input_shape)
         loss_s = self.loss_small(*yolo_out[2], y_true_2, gt_2, input_shape)
-        return loss_l + loss_m + loss_s
+        loss_unet = self.unet_loss(yolo_out[3], mask)
+        return loss_l + loss_m + loss_s + loss_unet

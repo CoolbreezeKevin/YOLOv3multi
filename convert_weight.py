@@ -38,9 +38,6 @@ def build_network():
 
 
 def convert(weights_file, output_file):
-    print(weights_file,) 
-    print("________________________________________________________")
-    print(output_file)
     """Convert weight to mindspore ckpt."""
     params = build_network()
     weights = load_weight(weights_file)
@@ -73,7 +70,6 @@ def convert(weights_file, output_file):
 
     ms.save_checkpoint(param_list, output_file)
 
-print(__name__)
+
 if __name__ == "__main__":
-    print(config.input_file, config.output_file)
     convert(config.input_file, config.output_file)

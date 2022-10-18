@@ -109,8 +109,9 @@ def run_train():
     if config.lr_scheduler == 'cosine_annealing' and config.max_epoch > config.T_max:
         config.T_max = config.max_epoch
     config.lr_epochs = list(map(int, config.lr_epochs.split(',')))
-    config.data_root = os.path.join(config.data_dir, 'train2014')
-    config.annFile = os.path.join(config.data_dir, 'annotations/instances_train2014.json')
+    ## Write following in .config
+    # config.data_root = os.path.join(config.data_dir, 'train2014')
+    # config.annFile = os.path.join(config.data_dir, 'annotations/instances_train2014.json')
 
     profiler = network_init(config)
 
@@ -155,6 +156,7 @@ def run_train():
 
     for epoch_idx in range(config.max_epoch):
         for step_idx, data in enumerate(data_loader):
+            print('batch{}'.format(step_idx))
             images = data["image"]
             input_shape = images.shape[2:4]
             config.logger.info('iter[{}], shape{}'.format(step_idx, input_shape[0]))
@@ -166,9 +168,10 @@ def run_train():
             batch_gt_box0 = ms.Tensor.from_numpy(data['gt_box1'])
             batch_gt_box1 = ms.Tensor.from_numpy(data['gt_box2'])
             batch_gt_box2 = ms.Tensor.from_numpy(data['gt_box3'])
+            seg_ann = ms.Tensor.from_numpy(data['seg'])
 
             loss = network(images, batch_y_true_0, batch_y_true_1, batch_y_true_2, batch_gt_box0, batch_gt_box1,
-                           batch_gt_box2)
+                           batch_gt_box2, seg_ann)
             loss_meter.update(loss.asnumpy())
 
             # it is used for loss, performance output per config.log_interval steps.

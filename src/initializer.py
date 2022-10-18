@@ -177,7 +177,6 @@ def load_yolov3_params(args, network):
     """Load yolov3 darknet parameter from checkpoint."""
     if args.pretrained_backbone:
         network = load_backbone(network, args.pretrained_backbone, args)
-        # print("yes!!!")
         args.logger.info('load pre-trained backbone {} into network'.format(args.pretrained_backbone))
     else:
         args.logger.info('Not load pre-trained backbone, please be careful')

@@ -1,0 +1,16 @@
+
+>>>>>>>>>> group_filter_map <<<<<<<<<<
+
+>>>>>>>>>> dependences <<<<<<<<<<
+{  }
+
+>>>>>>>>>> constraints <<<<<<<<<<
+domain: "{ S_0[i0, i4, i5] : 0 <= i0 <= 1 and 0 <= i4 <= 49 and 0 <= i5 <= 1 }"
+
+>>>>>>>>>> time_records <<<<<<<<<<
+[ Polyhedral exec time ], AnalyzeSchedule spent 7.60172 ms
+[ Polyhedral exec time ], TileOuterBand spent 5.36772 ms
+[ Polyhedral exec time ], MappingOuterBand spent 2.25754 ms
+[ Polyhedral exec time ], SharedMemoryManager spent 43.6365 ms
+[ Polyhedral exec time ], RegisterMemoryManager spent 0.101813 ms
+[ Polyhedral exec time ], RealizeManager spent 0.015568 ms
