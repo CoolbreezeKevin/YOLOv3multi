@@ -3,7 +3,7 @@ import glob
 import os
 import cv2
 from tqdm import tqdm, trange
-from osgeo import gdal
+# from osgeo import gdal
 import re
 # image_settings = ['jpg','tif','png','jpeg','tiff']
 class DatasetImageCropper(object):
