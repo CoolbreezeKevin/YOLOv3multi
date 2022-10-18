@@ -197,9 +197,60 @@ class COCOYoloDatasetWithSeg(COCOYoloDataset):
         # out_target.append()
         return img, out_target,[mask], [], [], [], [], [], []
 
+def generate_csv(js_path, csv_path ="./folds.csv", fold_num = 5):
+    coco2 = json.load(open(js_path,'r'))
+    
+    lnth = len(coco2["images"])
+    fold_len = lnth//fold_num
+
+    names = []
+    fold = []
+    ids = []
+    for i, im in enumerate(coco2["images"]):
+        f = i // fold_len
+        names.append(im["file_name"])
+        fold.append(f)
+        ids.append(im['id'])
+
+    with open(csv_path, 'w') as f:
+        f.write('id,name,fold\n')
+        for id, name, fold in zip(ids, names, fold):
+            f.write(str(id)+','+name+','+str(fold)+'\n')
+
+class FoldTrainWithSeg(COCOYoloDatasetWithSeg):
+    def __init__(self, *arg, folds=[0,1,2,3], **kwargs):
+        super().__init__(*arg, **kwargs)
+        self.folds = folds if not self.cfg.folds else self.cfg.folds
+        self.folds = set(self.folds)
+        
+        if not self.cfg.fold_csv:
+            generate_csv(self.cfg.ann_file)
+            self.csvpth = './folds.csv' 
+        else:
+            self.csvpth = self.cfg.fold_csv
+        df = pd.read_csv(self.csvpth)
+        img_ids = []
+        
+        for img_id in self.img_ids:
+            f = df[df['id']==img_id]['fold'].tolist()[0]
+            if f in folds:
+                img_ids.append(img_id)
+        self.img_ids = img_ids
+
+        self.categories = {cat["id"]: cat["name"] for cat in self.coco.cats.values()}
+
+        self.cat_ids_to_continuous_ids = {
+            v: i for i, v in enumerate(self.coco.getCatIds())
+        }
+        self.continuous_ids_cat_ids = {
+            v: k for k, v in self.cat_ids_to_continuous_ids.items()
+        }
+
+    
 dataset_dict = {
     "COCOYoloDatasetWithSeg":COCOYoloDatasetWithSeg,
-    "COCOYoloDataset":COCOYoloDataset
+    "COCOYoloDataset":COCOYoloDataset，
+    "FoldTrainWithSeg":FoldTrainWithSeg
 }
 
 def create_yolo_dataset(image_dir, anno_path, batch_size, device_num, rank,
