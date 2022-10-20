@@ -14,16 +14,17 @@
 # ============================================================================
 """YoloV3 eval."""
 import os
+os.environ["CUDA_VISIBLE_DEVICES"]="3"
 import datetime
 import time
-
+import mindspore.ops as ops
 import mindspore as ms
 
 from src.yolo import YOLOV3DarkNet53
 from src.logger import get_logger
 from src.yolo_dataset import create_yolo_dataset
 from src.util import DetectionEngine
-
+import numpy as np
 from model_utils.config import config
 # only useful for huawei cloud modelarts.
 from model_utils.moxing_adapter import moxing_wrapper, modelarts_pre_process
@@ -54,8 +55,8 @@ def load_parameters(network, file_name):
 def run_test():
     """The function of eval."""
     start_time = time.time()
-    config.data_root = os.path.join(config.data_dir, 'val2014')
-    config.annFile = os.path.join(config.data_dir, 'annotations/instances_val2014.json')
+    # config.data_root = os.path.join(config.data_dir, 'val2014')
+    # config.annFile = os.path.join(config.data_dir, 'annotations/instances_val2014.json')
 
     devid = int(os.getenv('DEVICE_ID')) if os.getenv('DEVICE_ID') else 0
     ms.set_context(mode=ms.GRAPH_MODE, device_target=config.device_target, save_graphs=False, device_id=devid)
@@ -89,30 +90,40 @@ def run_test():
     config.logger.info('totol %d images to eval', ds.get_dataset_size() * config.per_batch_size)
 
     network.set_train(False)
-
+    get_iou = ops.IOU()
     # init detection engine
     detection = DetectionEngine(config)
-
+    iou_list = []
     config.logger.info('Start inference....')
     for i, data in enumerate(ds.create_dict_iterator(num_epochs=1)):
         image = data["image"]
-
+        mask = data['masks']
         image_shape = data["image_shape"]
         image_id = data["img_id"]
 
-        output_big, output_me, output_small = network(image)
+        output_big, output_me, output_small, pred_mask = network(image)
         output_big = output_big.asnumpy()
         output_me = output_me.asnumpy()
         output_small = output_small.asnumpy()
         image_id = image_id.asnumpy()
         image_shape = image_shape.asnumpy()
-
+        # pred_mask = pred_mask.asnumpy()
+        mask = ms.Tensor(mask, dtype=ms.float32)
         detection.detect([output_small, output_me, output_big], config.per_batch_size, image_shape, image_id)
+        
+        
+        mask = mask.squeeze(0).squeeze(0)
+        pred_mask = pred_mask.squeeze(0).squeeze(0)
+
+        
+        # iou = get_iou(mask, pred_mask)
+        # iou_list.append(iou)
         if i % 50 == 0:
             config.logger.info('Processing... {:.2f}% '.format(i / ds.get_dataset_size() * 100))
 
     config.logger.info('Calculating mAP...')
     detection.do_nms_for_results()
+    config.logger.info("average iou:{}".format(np.mean(np.array(iou_list))))
     result_file_path = detection.write_result()
     config.logger.info('result file path: %s', result_file_path)
     eval_result = detection.get_eval_result()
