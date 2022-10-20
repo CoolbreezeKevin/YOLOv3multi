@@ -50,6 +50,12 @@ def load_parameters(network, file_name):
     ms.load_param_into_net(network, param_dict_new)
     config.logger.info('load_model %s success', file_name)
 
+def get_iou(mask, pred_mask):
+    mask = mask>0.4
+    pred_mask = pred_mask>0.4
+    mask = mask.reshape(-1)
+    pred_mask = pred_mask.reshape(-1)
+    return np.mean(mask&pred_mask)
 
 @moxing_wrapper(pre_process=modelarts_pre_process)
 def run_test():
@@ -90,7 +96,7 @@ def run_test():
     config.logger.info('totol %d images to eval', ds.get_dataset_size() * config.per_batch_size)
 
     network.set_train(False)
-    get_iou = ops.IOU()
+
     # init detection engine
     detection = DetectionEngine(config)
     iou_list = []
@@ -116,8 +122,8 @@ def run_test():
         pred_mask = pred_mask.squeeze(0).squeeze(0)
 
         
-        # iou = get_iou(mask, pred_mask)
-        # iou_list.append(iou)
+        iou = get_iou(mask, pred_mask)
+        iou_list.append(iou)
         if i % 50 == 0:
             config.logger.info('Processing... {:.2f}% '.format(i / ds.get_dataset_size() * 100))
 
