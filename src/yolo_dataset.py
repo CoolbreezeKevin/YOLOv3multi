@@ -157,16 +157,17 @@ class COCOYoloDatasetWithSeg(COCOYoloDataset):
         coco = self.coco
         img_id = self.img_ids[index]
         img_path = coco.loadImgs(img_id)[0]["file_name"]
-        if not self.is_training:
-            img = Image.open(os.path.join(self.root, img_path)).convert("RGB")
-            return img, img_id
+
         img = np.fromfile(os.path.join(self.root, img_path), dtype="int8")
         mask_path = os.path.join(self.seg_path, img_path.replace(".tif",".png"))        
         mask = cv2.imread(mask_path, -1)
         # mask = np.expand_dims(mask,2)
         # print()
         # img=np.concatenate((img,mask),2)
-
+        if not self.is_training:
+            img = Image.open(os.path.join(self.root, img_path)).convert("RGB")
+            return img, img_id, [mask]
+        
         ann_ids = coco.getAnnIds(imgIds=img_id)
         target = coco.loadAnns(ann_ids)
         # filter crowd annotations
@@ -292,14 +293,27 @@ def create_yolo_dataset(image_dir, anno_path, batch_size, device_num, rank,
             dataset = dataset.batch(batch_size, per_batch_map=multi_scale_trans, input_columns=dataset_column_names,
                                     num_parallel_workers=min(8, num_parallel_workers), drop_remainder=True)
     else:
-        dataset = ds.GeneratorDataset(yolo_dataset, column_names=["image", "img_id"], sampler=distributed_sampler)
+        valid_dataset = FoldTrainWithSeg(root=image_dir, ann_file=anno_path, cfg=config, filter_crowd_anno=filter_crowd,
+                                   remove_images_without_annotations=remove_empty_anno, is_training=is_training, folds=config.valid_folds)
+        hwc_to_chw = ds.vision.HWC2CHW()
+        # dataset_column_names
+        config.dataset_size = len(yolo_dataset)
+        config.valid_dataset_size = len(valid_dataset)
+        cores = multiprocessing.cpu_count()
+        num_parallel_workers = int(cores / device_num)
+        distributed_sampler = DistributedSampler(len(yolo_dataset), device_num, rank, shuffle=shuffle)
 
-        compose_map_func = (lambda image, img_id: reshape_fn(image, img_id, config))
-        dataset = dataset.map(operations=compose_map_func, input_columns=["image", "img_id"],
-                              output_columns=["image", "image_shape", "img_id"],
-                              column_order=["image", "image_shape", "img_id"],
+        # distributed_sampler = DistributedSampler(len(valid_dataset), device_num, rank, shuffle=shuffle)
+        dataset = ds.GeneratorDataset(yolo_dataset, column_names=["image", "img_id", "masks"], sampler=distributed_sampler)
+
+        compose_map_func = (lambda image, img_id, masks: reshape_fn(image, img_id, masks, config))
+        dataset = dataset.map(operations=compose_map_func, input_columns=["image", "img_id","masks"],
+                              output_columns=["image", "image_shape", "img_id", "masks"],
+                              column_order=["image", "image_shape", "img_id", "masks"],
                               num_parallel_workers=8)
         dataset = dataset.map(operations=hwc_to_chw, input_columns=["image"], num_parallel_workers=8)
+        # dataset = dataset.map(operations=hwc_to_chw, input_columns=["masks"], num_parallel_workers=8)
         dataset = dataset.batch(batch_size, drop_remainder=True)
 
     return dataset
+
