@@ -486,6 +486,7 @@ class MultiScaleTrans:
         self.max_box = config.max_box
         self.label_smooth = config.label_smooth
         self.label_smooth_factor = config.label_smooth_factor
+        self.transform = aug_transforms.__dict__[config.transform] if config.transform else None
 
     def generate_seed_list(self, init_seed=1234, seed_num=int(1e6), seed_range=(1, 1000)):
         seed_list = []
@@ -519,6 +520,13 @@ class MultiScaleTrans:
         input_size = self.size_dict[seed]
 
         for img, anno, s in zip(imgs, annos, seg):
+            # print(type(anno), img.shape, s.shape)
+            if self.transform:
+                s = s.transpose(1,2,0)
+                transformed = self.transform(image=img, mask=s, bboxes=anno)
+                img, anno, s = transformed['image'], transformed['bboxes'], transformed['mask']
+                anno = np.array(anno)
+                s = s.transpose(2,0,1)
             img, anno = preprocess_fn(img, anno, self.config, input_size, self.device_num)
             ret_imgs.append(img.transpose(2, 0, 1).copy())
             bbox_true_1, bbox_true_2, bbox_true_3, gt_box1, gt_box2, gt_box3 = \
