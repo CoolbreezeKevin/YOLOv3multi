@@ -18,15 +18,20 @@
 import os
 import json
 import copy
+import cv2
 from tqdm import tqdm
 import numpy as np
-from clip.coco_clip_ann import COCODatasetImageCropper
+from clip.coco_clip_ann import CoCoDatasetImageCropper
 from clip.clip import DatasetImageCropper
-# js_path = '/dataset/train/instances_train.json'
+from src.aug_transforms import tranform_test
+js_path = '/dataset/train/instances_train.json'
 
-# coco2 = json.load(open(js_path,'r'))
-# print(len(coco2["annotations"]))
-
+img = cv2.imread('testim/images_clip/1_0_0.tif',-1)
+mask = cv2.imread('testim/masks_clip/1_0_0.png',-1)
+mask = np.expand_dims(mask, 2)
+coco2 = json.load(open(js_path,'r'))
+transformed = tranform_test(image=img, mask=mask, bboxes=np.array([[56, 56, 200, 200, 1]]) )
+print(len(coco2["annotations"]))
 # newjs = coco2.copy()
 # print(len(newjs['images']))
 # newjs['images'] = newjs['images'][0:3]
