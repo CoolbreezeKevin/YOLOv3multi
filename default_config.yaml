@@ -24,11 +24,17 @@ modelarts_dataset_unzip_name: "coco2014"
 #    "FoldTrainWithSeg":FoldTrainWithSeg
 data_dir: "/storage/official/cv/yolov3_darknet53/testim"
 per_batch_size: 2
-datasettype: "COCOYoloDatasetWithSeg"
+traindatasettype: "FoldTrainWithSeg"
+train_folds: [0,1,2,3]
 seg_path: "/storage/official/cv/yolov3_darknet53/testim/masks_clip"
 data_root: "/storage/official/cv/yolov3_darknet53/testim/images_clip"
 annFile: "/storage/official/cv/yolov3_darknet53/testim/outjs.json"
+transform: tranform_test
 
+
+validdatasettype: "FoldTrainWithSeg"
+val_epoch: 1
+valid_folds: [4]
 # network related
 pretrained_backbone: "myms_darknet.ckpt"
 resume_yolov3: ""
@@ -71,7 +77,7 @@ training_shape: ""
 
 
 # Eval option
-pretrained: ""
+pretrained: "myms_darknet.ckpt"
 log_path: "outputs/"
 nms_thresh: 0.5
 # annFile: ""
