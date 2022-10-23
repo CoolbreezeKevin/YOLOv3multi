@@ -45,6 +45,65 @@ def _conv_bn_relu(in_channel,
          nn.LeakyReLU(alpha)]
     )
 
+ 
+class UnetUppHead_my(nn.Cell):
+    def __init__(self,out_channels=1,features=[32,64,128,256,512,1024],):
+        super(UnetUppHead_my,self).__init__()
+        # reversed_feature = reversed(features)
+        self.ups = nn.CellList()
+        self.conv1 = nn.SequentialCell([
+            DoubleConv(features[-1], features[-2]),
+            nn.Conv2dTranspose(features[-2], features[-2],kernel_size=2,stride=2)
+        ])# in 1024 out 512
+
+        for feature in reversed(features[:-1]):
+            self.ups.append(DoubleConv(feature*2,feature))
+            self.ups.append(
+                nn.Conv2dTranspose(feature,feature//2,kernel_size=2,stride=2,)
+            )
+
+        self.final_conv=nn.Conv2d(features[0],out_channels,kernel_size=1)
+        self.concat = ops.Concat(axis=1)
+        # self.sigmoid = ops.Sigmoid()
+        self.features = features
+    def construct(self, features):
+        #  [32, 64, 128, 256, 512, 1024]
+        x = self.conv1(features[-1])
+        if ops.shape(x)!=ops.shape(features[-2]):
+            x = ops.ResizeNearestNeighbor(ops.shape(features[-2])[2:])(x)
+        x = self.concat((x,features[-2]))# 1024->512 (512*2)
+
+        x = self.ups[0](x)
+        x = self.ups[1](x)
+        if ops.shape(x)!=ops.shape(features[-3]):
+            x = ops.ResizeNearestNeighbor(ops.shape(features[-3])[2:])(x)
+        x = self.concat((x,features[-3]))# 1024->256 (256*2)
+
+        x = self.ups[2](x)
+        x = self.ups[3](x)
+        if ops.shape(x)!=ops.shape(features[-4]):
+            x = ops.ResizeNearestNeighbor(ops.shape(features[-4])[2:])(x)
+        x = self.concat((x,features[-4]))     # 512->128 (128*2)   
+        
+        x = self.ups[4](x)
+        x = self.ups[5](x)
+        if ops.shape(x)!=ops.shape(features[-5]):
+            x = ops.ResizeNearestNeighbor(ops.shape(features[-5])[2:])(x)
+        x = self.concat((x,features[-5])) # 256->64 (64*2)  
+
+        x = self.ups[6](x)
+        x = self.ups[7](x)
+        if ops.shape(x)!=ops.shape(features[-6]):
+            x = ops.ResizeNearestNeighbor(ops.shape(features[-6])[2:])(x)
+        x = self.concat((x,features[-6])) # 128->32 (32*2)
+
+        x = self.ups[8](x)
+        # x = self.ups[9](x)
+        # if ops.shape(x)!=ops.shape(features[-7]):
+        #     x = ops.ResizeNearestNeighbor(ops.shape(features[-6])[2:])(x)
+        # x = self.concat(x,features[-6]) # 64->32
+        return self.final_conv(x)
+      
 class DoubleConv(nn.Cell):
     def __init__(self,in_channels,out_channels):
         super(DoubleConv, self).__init__()
