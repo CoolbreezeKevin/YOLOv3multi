@@ -62,6 +62,69 @@ class DoubleConv(nn.Cell):
     def construct(self,x):
         return self.conv(x)
 
+class FPNUpHead(nn.Cell):
+    def __init__(self,out_channels=1,features=[32,64,128,256,512,1024],):
+        super(FPNUpHead,self).__init__()
+        # reversed_feature = reversed(features)
+        self.ups = nn.CellList()
+        self.conv1 = nn.SequentialCell([
+            DoubleConv(features[-1], features[-2]),
+            nn.Conv2dTranspose(features[-2], features[-2],kernel_size=2,stride=2)
+        ])# in 1024 out 512
+
+        for feature in reversed(features[:-1]):
+            self.ups.append(DoubleConv(feature*2,feature))
+            self.ups.append(
+                nn.Conv2dTranspose(feature,feature//2,kernel_size=2,stride=2,)
+            )
+
+        # self.final_conv=nn.Conv2d(features[0],out_channels,kernel_size=1)
+        self.concat = ops.Concat(axis=1)
+        # self.sigmoid = ops.Sigmoid()
+        self.features = features
+    def construct(self, features):
+        #  [32, 64, 128, 256, 512, 1024]
+        outs = []
+        x = self.conv1(features[-1])
+        if ops.shape(x)!=ops.shape(features[-2]):
+            x = ops.ResizeNearestNeighbor(ops.shape(features[-2])[2:])(x)
+        outs.append(x)
+        x = self.concat((x,features[-2]))# 1024->512 (512*2)
+        
+        
+        x = self.ups[0](x)
+        x = self.ups[1](x)
+        if ops.shape(x)!=ops.shape(features[-3]):
+            x = ops.ResizeNearestNeighbor(ops.shape(features[-3])[2:])(x)
+        outs.append(x)
+        x = self.concat((x,features[-3]))# 1024->256 (256*2)
+
+        x = self.ups[2](x)
+        x = self.ups[3](x)
+        if ops.shape(x)!=ops.shape(features[-4]):
+            x = ops.ResizeNearestNeighbor(ops.shape(features[-4])[2:])(x)
+        outs.append(x)
+        x = self.concat((x,features[-4]))     # 512->128 (128*2)   
+        
+        x = self.ups[4](x)
+        x = self.ups[5](x)
+        if ops.shape(x)!=ops.shape(features[-5]):
+            x = ops.ResizeNearestNeighbor(ops.shape(features[-5])[2:])(x)
+        outs.append(x)
+        x = self.concat((x,features[-5])) # 256->64 (64*2)  
+
+        x = self.ups[6](x)
+        x = self.ups[7](x)
+        if ops.shape(x)!=ops.shape(features[-6]):
+            x = ops.ResizeNearestNeighbor(ops.shape(features[-6])[2:])(x)
+        outs.append(x)
+        x = self.concat((x,features[-6])) # 128->32 (32*2)
+
+        x = self.ups[8](x)
+        outs.append(x)
+
+        return outs
+
 class UnetppHead(nn.Cell):
     def __init__(self,out_channels=1,features=[32,64,128],):
         super(UnetppHead,self).__init__()
@@ -87,16 +150,15 @@ class UnetppHead(nn.Cell):
 
         self.paraconv32 = DoubleConv(2*features[0], features[0])
   
-        self.final_conv=nn.Conv2d(2*features[0],out_channels,kernel_size=1)
+        self.final_conv=nn.SequentialCell([
+            DoubleConv(features[0]+features[0], 2*features[0]),
+            nn.Conv2d(2*features[0],out_channels,kernel_size=1)])
         self.concat = ops.Concat(axis=1)
         self.sigmoid = ops.Sigmoid()
         self.features = features
 
     def construct(self, features):
         #  [32, 64, 128]
-        f0 = features[0]
-        f1 = features[1]
-        f2 = features[2]
         
         up1 = self.upconv1(features[2])
         para2 = self.paraconv2(features[1])
@@ -121,9 +183,9 @@ class UnetppHead(nn.Cell):
         para32 = self.paraconv32(up21_para31) #paraconv32
         if ops.shape(para32)!=ops.shape(features[0]):
             para32 = ops.ResizeNearestNeighbor(ops.shape(features[0])[2:])(para32)        
-        road = up22-para32
-        x = self.concat((road,up22))
-
+        # road = up22-para32
+        # x = self.concat((road,up22))
+        x = self.concat((para32,up22))
         x = self.final_conv(x)
         return self.sigmoid(x)
 
@@ -210,7 +272,7 @@ class YOLOv3(nn.Cell):
                                     out_chls=backbone_shape[-4],
                                     out_channels=out_channel)
         self.concat = ops.Concat(axis=1)
-
+        self.unetup = FPNUpHead()
     def construct(self, x):
         # input_shape of x is (batch_size, 3, h, w)
         # feature_map1 is (batch_size, backbone_shape[2], h/8, w/8)
@@ -220,9 +282,10 @@ class YOLOv3(nn.Cell):
         img_width = ops.Shape()(x)[3]
 
         # feature_map1, feature_map2, feature_map3 = self.backbone(x)
-
+        
         features = self.backbone(x)
-
+        out = self.unetup(features)
+        features = [out[5], out[3], out[2], out[1], out[0], features[5]]
         feature_map1, feature_map2, feature_map3 = features[3], features[4], features[5]
         
         con1, big_object_output = self.backblock0(feature_map3)
@@ -459,7 +522,8 @@ class YOLOV3DarkNet53(nn.Cell):
         self.detect_1 = DetectionBlock('l', is_training=is_training, config=self.config)
         self.detect_2 = DetectionBlock('m', is_training=is_training, config=self.config)
         self.detect_3 = DetectionBlock('s', is_training=is_training, config=self.config)
-        self.unetup = UnetppHead()
+
+        self.mask_decoder = UnetppHead()
 
     def construct(self, x):
         """
@@ -471,7 +535,7 @@ class YOLOV3DarkNet53(nn.Cell):
         input_shape = ops.shape(x)[2:4]
         input_shape = ops.cast(self.tenser_to_array(input_shape), ms.float32)
         big_object_output, medium_object_output, small_object_output, features = self.feature_map(x)
-        seg_road = self.unetup(features)
+        seg_road = self.mask_decoder(features)
         # [32, 64, 128, 256, 512, 1024]
         
         if not self.keep_detect:
