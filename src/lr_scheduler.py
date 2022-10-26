@@ -74,6 +74,18 @@ def warmup_step_lr(lr, lr_epochs, steps_per_epoch, warmup_epochs, max_epoch, gam
 
     return np.array(lr_each_step).astype(np.float32)
 
+def poly_warmup_lr(max_epoch, steps_per_epoch, warmup_epochs=1, power=0.9,base_lr=0.01):
+    warmup_init_lr = 0
+    total_steps = int(max_epoch * steps_per_epoch)
+    warmup_steps = int(warmup_epochs * steps_per_epoch)
+    lr = []
+    for n in range(total_steps):
+        if n < warmup_steps:
+            lr.append(base_lr*n/warmup_steps)
+        else:
+            # ep = n//warmup_steps
+            lr.append(base_lr*(1-n/total_steps)**power)
+    return np.array(lr).astype(np.float32)
 
 def multi_step_lr(lr, milestones, steps_per_epoch, max_epoch, gamma=0.1):
     """
