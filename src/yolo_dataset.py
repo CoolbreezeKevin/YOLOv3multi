@@ -317,3 +317,56 @@ def create_yolo_dataset(image_dir, anno_path, batch_size, device_num, rank,
 
     return dataset
 
+def checkvalid(img):
+    unq = np.unique(img)
+    if unq.shape[0]<=2:
+        return False
+    return True
+
+def statistic_normalize_img(img, idx):
+
+    flag = checkvalid(img)
+
+    """Statistic normalize images."""
+    # img: RGB
+    if isinstance(img, Image.Image):
+        img = np.array(img)
+    img = img/255.
+    # Computed from random subset of ImageNet training images
+    mean = np.array([0.485, 0.456, 0.406])
+    std = np.array([0.229, 0.224, 0.225])
+    img = (img - mean) / std
+    return img.astype('float32'), idx, flag
+
+class TestTimeDataset:
+    def __init__(self, img_dir, cocofile) -> None:
+        self.coco = COCO(cocofile)
+        self.img_dir = img_dir
+        self.categories = {cat["id"]: cat["name"] for cat in self.coco.cats.values()}
+        self.img_ids = list(sorted(self.coco.imgs.keys()))
+    def __getitem__(self, index):
+        coco = self.coco
+        img_id = self.img_ids[index]
+        img_path = coco.loadImgs(img_id)[0]["file_name"]
+        img = np.fromfile(os.path.join(self.img_dir, img_path), dtype="uint8")
+        img = Image.open(os.path.join(self.img_dir, img_path)).convert("RGB")
+        return img, img_id
+    def __len__(self):
+        return len(self.img_ids)
+
+
+def create_test_dataset(img_dir, cocofile, rank=0, group_size=1):
+    hwc_to_chw = ds.vision.HWC2CHW()
+    dataset = TestTimeDataset(img_dir, cocofile)
+    distributed_sampler = DistributedSampler(len(dataset), group_size, rank, shuffle=False)
+    compose_map_func = (lambda image, img_id: statistic_normalize_img(image, img_id))
+    dataset = ds.GeneratorDataset(dataset, column_names=["image", "img_id"], sampler=distributed_sampler)
+    # dataset = dataset.map(operations=hwc_to_chw, input_columns=["image"], num_parallel_workers=8)
+    
+    dataset = dataset.map(operations=compose_map_func, input_columns=["image", "img_id"],
+                            output_columns=["image", "img_id", 'flag'], column_order=["image", "img_id", 'flag'],
+                            num_parallel_workers=2)
+    dataset = dataset.map(operations=hwc_to_chw, input_columns=["image"],
+                          num_parallel_workers=2)
+    dataset = dataset.batch(1, drop_remainder=False)         
+    return dataset
