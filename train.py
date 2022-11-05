@@ -134,6 +134,7 @@ def run_train():
     parallel_init(config)
 
     network = YOLOV3DarkNet53(is_training=True)
+    network.set_train()
     # default is kaiming-normal
     default_recurisive_init(network)
     load_yolov3_params(config, network)
