@@ -41,6 +41,21 @@ def conver_training_shape(args):
     training_shape = [int(args.training_shape), int(args.training_shape)]
     return training_shape
 
+def trainable_setting(model, train_backbone, train_detect_head, train_unetup):
+    para = model.trainable_params()
+    for m in para:
+        if 'unetup'in m.name:
+            m.requires_grad = train_unetup
+        if 'backblock' in m.name:
+            m.requires_grad = train_detect_head
+        if 'feature_map.conv' in m.name:
+            m.requires_grad = train_detect_head
+        if 'backbone' in m.name:
+            m.requires_grad = train_backbone
+        if 'feature_map.backbone.layer5' in m.name:
+            m.requires_grad = train_unetup
+        if 'feature_map.backbone.conv5' in m.name:
+            m.requires_grad = train_unetup
 
 def set_graph_kernel_context():
     if ms.get_context("device_target") == "GPU":
@@ -122,6 +137,7 @@ def run_train():
     # default is kaiming-normal
     default_recurisive_init(network)
     load_yolov3_params(config, network)
+    trainable_setting(network, train_backbone=True, train_detect_head=True, train_unetup=False)
 
     network = YoloWithLossCell(network)
     config.logger.info('finish get network')
